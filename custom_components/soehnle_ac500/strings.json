@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Soehnle AC500",
+        "description": "Enter the BLE address and display name for the purifier you want to connect.",
+        "data": {
+          "address": "BLE address",
+          "name": "Device name"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Soehnle AC500",
+        "description": "Update the BLE address or display name for this purifier.",
+        "data": {
+          "address": "BLE address",
+          "name": "Device name"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This BLE device is already configured.",
+      "reconfigure_successful": "Reconfiguration was successful."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "air_quality": {
+        "state": {
+          "good": "Good",
+          "moderate": "Moderate",
+          "unhealthy_sensitive": "Unhealthy for Sensitive Groups",
+          "unhealthy": "Unhealthy",
+          "very_unhealthy": "Very Unhealthy",
+          "hazardous": "Hazardous"
+        }
+      }
+    }
+  }
+}

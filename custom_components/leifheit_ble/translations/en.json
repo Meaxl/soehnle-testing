@@ -1,0 +1,52 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Leifheit BLE",
+        "description": "Enter the BLE address and display name for the device you want to connect.",
+        "data": {
+          "address": "BLE address",
+          "name": "Device name"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Leifheit BLE",
+        "description": "Update the BLE address or display name for this device.",
+        "data": {
+          "address": "BLE address",
+          "name": "Device name"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This BLE device is already configured.",
+      "reconfigure_successful": "Reconfiguration was successful."
+    },
+    "error": {
+      "cannot_connect": "The BLE device is not reachable right now.",
+      "unknown": "Unexpected error."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "notify_value": {
+        "name": "Notify value"
+      }
+    },
+    "binary_sensor": {
+      "notify_flag": {
+        "name": "Notify flag"
+      }
+    },
+    "button": {
+      "send_example_command": {
+        "name": "Send example command"
+      }
+    },
+    "switch": {
+      "example_output": {
+        "name": "Example output"
+      }
+    }
+  }
+}

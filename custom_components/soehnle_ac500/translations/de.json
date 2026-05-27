@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Soehnle AC500 einrichten",
+        "description": "Geben Sie die BLE-Adresse und den Anzeigenamen des Luftreinigers ein.",
+        "data": {
+          "address": "BLE-Adresse",
+          "name": "Gerätename"
+        }
+      },
+      "reconfigure": {
+        "title": "Soehnle AC500 neu konfigurieren",
+        "description": "Aktualisieren Sie die BLE-Adresse oder den Anzeigenamen dieses Luftreinigers.",
+        "data": {
+          "address": "BLE-Adresse",
+          "name": "Gerätename"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Dieses BLE-Gerät ist bereits konfiguriert.",
+      "reconfigure_successful": "Die Neukonfiguration war erfolgreich."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "air_quality": {
+        "state": {
+          "good": "Gut",
+          "moderate": "Mäßig",
+          "unhealthy_sensitive": "Ungesund für Empfindliche",
+          "unhealthy": "Ungesund",
+          "very_unhealthy": "Sehr ungesund",
+          "hazardous": "Gefährlich"
+        }
+      }
+    }
+  }
+}

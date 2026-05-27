@@ -1,0 +1,15 @@
+.git
+.cloud
+.claude
+.google.token
+.vscode
+__pycache__
+*.DS_Store
+/certificate
+/ssl
+*.pem
+*.log
+*.db
+*.db-shm
+*.db-wal
+*.pyc
