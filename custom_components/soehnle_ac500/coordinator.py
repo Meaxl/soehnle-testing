@@ -21,7 +21,8 @@ from .models import SoehnleAc500State
 LOGGER = logging.getLogger(__name__)
 
 RECONNECT_INTERVAL = 5
-KEEPALIVE_TIMEOUT = 15
+HEARTBEAT_INTERVAL = 8
+HEARTBEAT_FAILURES_BEFORE_RECONNECT = 3
 CHECK_NIGHT_MODE_INTERVAL = 300
 NIGHT_MODE_FALLBACK_INTERVAL = 60
 STALE_THRESHOLD = 600
@@ -39,7 +40,9 @@ class SoehnleAc500Coordinator(DataUpdateCoordinator[SoehnleAc500State]):
         self._paused_for_night_mode = False
         self._checking_night_mode = False
         self._last_notify_ts = time.monotonic()
+        self._last_activity_ts = self._last_notify_ts
         self._last_night_mode_check_ts = 0.0
+        self._heartbeat_failures = 0
         self._bt_cancel_callback: Callable[[], None] | None = None
         self.async_set_updated_data(SoehnleAc500State())
 
@@ -67,6 +70,10 @@ class SoehnleAc500Coordinator(DataUpdateCoordinator[SoehnleAc500State]):
     def attach_client(self, client) -> None:
         """Attach the BLE client after construction."""
         self._client = client
+        self._last_notify_ts = getattr(client, "last_notify_ts", 0.0) or self._last_notify_ts
+        self._last_activity_ts = (
+            getattr(client, "last_activity_ts", 0.0) or self._last_activity_ts
+        )
         self.async_set_updated_data(client.state)
 
     async def async_start(self) -> None:
@@ -98,7 +105,14 @@ class SoehnleAc500Coordinator(DataUpdateCoordinator[SoehnleAc500State]):
     @callback
     def async_handle_client_update(self) -> None:
         """Push the latest client state to Home Assistant."""
-        self._last_notify_ts = time.monotonic()
+        self._last_notify_ts = max(
+            self._last_notify_ts,
+            getattr(self.client, "last_notify_ts", 0.0),
+        )
+        self._last_activity_ts = max(
+            self._last_activity_ts,
+            getattr(self.client, "last_activity_ts", 0.0),
+        )
         state = self.client.state
         if state.night and not self._paused_for_night_mode and not self._checking_night_mode:
             self.hass.async_create_task(self.pause_for_night_mode())
@@ -119,6 +133,7 @@ class SoehnleAc500Coordinator(DataUpdateCoordinator[SoehnleAc500State]):
         """Resume reconnect attempts after night mode ends."""
         self._paused_for_night_mode = False
         self._checking_night_mode = False
+        self._heartbeat_failures = 0
         self._unregister_bt_wakeup_listener()
         self.async_update_listeners()
         LOGGER.debug("AC500 resumed after night mode")
@@ -202,18 +217,40 @@ class SoehnleAc500Coordinator(DataUpdateCoordinator[SoehnleAc500State]):
                 if not await self.client.async_connect():
                     await asyncio.sleep(RECONNECT_INTERVAL)
                     continue
-                self._last_notify_ts = time.monotonic()
+                now = time.monotonic()
+                self._last_activity_ts = getattr(self.client, "last_activity_ts", 0.0) or now
+                if getattr(self.client, "last_notify_ts", 0.0):
+                    self._last_notify_ts = self.client.last_notify_ts
+                self._heartbeat_failures = 0
 
             await asyncio.sleep(2)
 
             if self._paused_for_night_mode:
                 continue
 
-            elapsed = time.monotonic() - self._last_notify_ts
-            if elapsed > KEEPALIVE_TIMEOUT:
-                LOGGER.warning(
-                    "No notify for %ss - forcing reconnect",
-                    KEEPALIVE_TIMEOUT,
+            elapsed = time.monotonic() - self._last_activity_ts
+            if elapsed < HEARTBEAT_INTERVAL:
+                continue
+
+            if await self.client.async_send_heartbeat():
+                self._last_activity_ts = getattr(
+                    self.client,
+                    "last_activity_ts",
+                    time.monotonic(),
                 )
+                self._heartbeat_failures = 0
+                continue
+
+            self._heartbeat_failures += 1
+            LOGGER.warning(
+                "AC500 heartbeat failed (%s/%s)",
+                self._heartbeat_failures,
+                HEARTBEAT_FAILURES_BEFORE_RECONNECT,
+            )
+            if (
+                self._heartbeat_failures >= HEARTBEAT_FAILURES_BEFORE_RECONNECT
+                or not self.client.is_connected
+            ):
+                LOGGER.warning("AC500 forcing reconnect after heartbeat failures")
                 await self.client.async_disconnect()
                 await asyncio.sleep(RECONNECT_INTERVAL)

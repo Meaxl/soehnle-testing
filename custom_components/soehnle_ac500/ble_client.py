@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -22,6 +23,7 @@ from .const import (
     UUID_FFD4,
     UUID_FFD5,
     UUID_FFF1,
+    UUID_HEARTBEAT_READ,
     UUID_WRITE,
 )
 from .models import SoehnleAc500State
@@ -40,6 +42,8 @@ class SoehnleAc500BleClient:
         self._lock = asyncio.Lock()
         self._callbacks: list[Callable[[], None]] = []
         self.state = SoehnleAc500State()
+        self._last_notify_ts = 0.0
+        self._last_activity_ts = 0.0
 
     @property
     def address(self) -> str:
@@ -50,6 +54,16 @@ class SoehnleAc500BleClient:
     def is_connected(self) -> bool:
         """Return whether the BLE link is currently active."""
         return bool(self._client and self._client.is_connected)
+
+    @property
+    def last_notify_ts(self) -> float:
+        """Return the last monotonic timestamp that came from a notify frame."""
+        return self._last_notify_ts
+
+    @property
+    def last_activity_ts(self) -> float:
+        """Return the last monotonic timestamp of successful BLE activity."""
+        return self._last_activity_ts
 
     def register_callback(self, callback: Callable[[], None]) -> None:
         """Register a state-change callback."""
@@ -94,6 +108,7 @@ class SoehnleAc500BleClient:
 
             await self._read_d0ff_chars()
             self.state.connected = True
+            self._touch_activity()
             self._notify_home_assistant()
             LOGGER.info("AC500 connected via bleak_retry_connector")
             return True
@@ -128,6 +143,26 @@ class SoehnleAc500BleClient:
         self.state.connected = False
         self._notify_home_assistant()
 
+    async def async_send_heartbeat(self) -> bool:
+        """Perform a safe read to keep the GATT session active."""
+        if not await self.async_connect():
+            return False
+
+        if self._client is None:
+            return False
+
+        try:
+            await self._client.read_gatt_char(UUID_HEARTBEAT_READ)
+        except (BleakError, Exception) as err:
+            LOGGER.warning("AC500 heartbeat read failed: %s", err)
+            self.state.connected = False
+            self._notify_home_assistant()
+            return False
+
+        self._touch_activity()
+        LOGGER.debug("AC500 heartbeat read succeeded")
+        return True
+
     async def async_write_command(self, command_key: str) -> bool:
         """Write one of the predefined protocol commands."""
         hex_command = COMMANDS.get(command_key)
@@ -149,6 +184,7 @@ class SoehnleAc500BleClient:
                     bytearray.fromhex(hex_command),
                     response=False,
                 )
+                self._touch_activity()
                 LOGGER.debug("Sent %s (%s)", command_key, hex_command)
                 return True
             except BleakError as err:
@@ -194,12 +230,14 @@ class SoehnleAc500BleClient:
     def _handle_ef02(self, _characteristic: Any, data: bytearray) -> None:
         """Handle EF02 notifications."""
         payload = bytes(data)
+        self._touch_notify()
         LOGGER.debug("EF02 raw (%d bytes): %s", len(payload), payload.hex())
         if self.state.parse_ef02(payload):
             self._hass.loop.call_soon_threadsafe(self._notify_home_assistant)
 
     def _handle_ef03(self, _characteristic: Any, data: bytearray) -> None:
         """Handle EF03 notifications."""
+        self._touch_notify()
         payload = bytes(data).hex()
         if self.state.ef03_raw_hex != payload:
             self.state.ef03_raw_hex = payload
@@ -208,9 +246,20 @@ class SoehnleAc500BleClient:
     def _handle_ef04(self, _characteristic: Any, data: bytearray) -> None:
         """Handle EF04 notifications."""
         payload = bytes(data)
+        self._touch_notify()
         LOGGER.debug("EF04 raw (%d bytes): %s", len(payload), payload.hex())
         if len(payload) > 2 and self.state.parse_ef04(payload):
             self._hass.loop.call_soon_threadsafe(self._notify_home_assistant)
+
+    def _touch_activity(self) -> None:
+        """Record successful BLE transport activity."""
+        self._last_activity_ts = time.monotonic()
+
+    def _touch_notify(self) -> None:
+        """Record successful notify traffic."""
+        now = time.monotonic()
+        self._last_notify_ts = now
+        self._last_activity_ts = now
 
     def _notify_home_assistant(self) -> None:
         """Fan out state changes to registered callbacks."""

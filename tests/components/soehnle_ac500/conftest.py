@@ -36,8 +36,11 @@ def mock_config_entry(hass) -> MockConfigEntry:
         address=TEST_ADDRESS,
         state=state,
         async_write_command=AsyncMock(return_value=True),
+        async_send_heartbeat=AsyncMock(return_value=True),
         async_disconnect=AsyncMock(),
         unregister_callback=Mock(),
+        last_notify_ts=0.0,
+        last_activity_ts=0.0,
     )
     coordinator.attach_client(client)
     coordinator.async_set_updated_data(state)
